@@ -1,0 +1,506 @@
+//
+//  PaymentViewModel.swift
+//  Pace Cloud
+//
+//  Created by rgl on 14/11/19.
+//  Copyright © 2019 royalgreen. All rights reserved.
+//
+
+import Foundation
+import Combine
+
+class PaymentViewModel: ObservableObject {
+    @Published var userBalance: Double {
+        willSet {
+            objectWillChange.send(true)
+        }
+    }
+    @Published var userLastRecharge: Double {
+        willSet {
+            objectWillChange.send(true)
+        }
+    }
+    @Published var userLastRechargeDate: String {
+        willSet {
+            objectWillChange.send(true)
+        }
+    }
+    @Published var rechargeAmount: String = ""
+    @Published var rechargeNote: String = ""
+    @Published var invalidAmountMessage: String {
+        willSet {
+            objectWillChange.send(true)
+        }
+    }
+    
+    var objectWillChange = PassthroughSubject<Bool, Never>()
+    
+    private var userBalanceSubscriber: AnyCancellable? = nil
+    private var lastRechargeSubscriber: AnyCancellable? = nil
+    private var postAmountSubscriber: AnyCancellable? = nil
+    private var validAmountChecker: AnyCancellable? = nil
+    private var fosterStatusSubscriber: AnyCancellable? = nil
+    private var fosterRechargeSaveSubscriber: AnyCancellable? = nil
+    
+    var showLoader = PassthroughSubject<Bool, Never>()
+    var errorToastPublisher = PassthroughSubject<(Bool, String), Never>()
+    var successToastPublisher = PassthroughSubject<(Bool, String), Never>()
+    var rechargeConfDialogPublisher = PassthroughSubject<Bool, Never>()
+    var okButtonDisablePublisher = PassthroughSubject<Bool, Never>()
+    var webViewNavigationPublisher = PassthroughSubject<String, Never>()
+    var showWebViewPublisher = PassthroughSubject<Bool, Never>()
+    
+    var fosterStatusUrl = ""
+    var fosterProcessUrl = ""
+    private var validDigits = CharacterSet(charactersIn: "1234567890.")
+    
+    init() {
+        userBalance = 0.0
+        userLastRecharge = 0.0
+        userLastRechargeDate = ""
+        invalidAmountMessage = ""
+        validAmountChecker = $rechargeAmount.sink { val in
+            //check if the new string contains any invalid characters
+            if val.rangeOfCharacter(from: self.validDigits.inverted) != nil {
+                //clean the string (do this on the main thread to avoid overlapping with the current ContentView update cycle)
+                DispatchQueue.main.async {
+                    self.rechargeAmount = String(self.rechargeAmount.unicodeScalars.filter {
+                        self.validDigits.contains($0)
+                    })
+                }
+            }
+            
+            let amount = Double(val) ?? 0.0
+            if amount > 0.0 {
+                self.okButtonDisablePublisher.send(false)
+                DispatchQueue.main.async {
+                    self.invalidAmountMessage = ""
+                }
+            } else {
+                self.okButtonDisablePublisher.send(true)
+                DispatchQueue.main.async {
+                    self.invalidAmountMessage = "Invalid Amount"
+                }
+            }
+        }
+    }
+    
+    deinit {
+        userBalanceSubscriber?.cancel()
+        lastRechargeSubscriber?.cancel()
+        postAmountSubscriber?.cancel()
+        validAmountChecker?.cancel()
+        fosterStatusSubscriber?.cancel()
+        fosterRechargeSaveSubscriber?.cancel()
+    }
+    
+    func postAmount() {
+        self.postAmountSubscriber = self.executePostAmountApiCall()?
+            .sink(receiveCompletion: { completion in
+                switch completion {
+                    case .finished:
+                        break
+                    case .failure(let error):
+                        self.errorToastPublisher.send((true, error.localizedDescription))
+                        print(error.localizedDescription)
+                    //                        fatalError(error.localizedDescription)
+                }
+            }, receiveValue: { response in
+                if let resstate = response.resdata.resstate {
+                    if resstate == true {
+                        self.rechargeConfDialogPublisher.send(true)
+                        self.fosterStatusUrl = response.resdata.paymentStatusUrl ?? ""
+                        self.fosterProcessUrl = response.resdata.paymentProcessUrl ?? ""
+                        print(self.fosterStatusUrl)
+                    } else {
+                        self.errorToastPublisher.send((true, response.resdata.message ?? "Please try some times later!"))
+                    }
+                }
+            })
+    }
+    
+    func executePostAmountApiCall() -> AnyPublisher<PostAmountResponse, Error>? {
+        let user = UserLocalStorage.getUser()
+        let jsonObject = ["UserID": user.userID ?? 0, "rechargeAmount": rechargeAmount] as [String : Any]
+        let jsonArray = [jsonObject]
+        if !JSONSerialization.isValidJSONObject(jsonArray) {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        
+        let tempJson = try? JSONSerialization.data(withJSONObject: jsonArray, options: [])
+        
+        guard let jsonData = tempJson else {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        
+        guard let urlComponents = URLComponents(string: NetworkApiService.webBaseUrl+"/api/billclouduserclient/cloudrecharge") else {
+            print("Problem in UrlComponent creation...")
+            return nil
+        }
+        
+        guard let url = urlComponents.url else {
+            return nil
+        }
+        
+        //Request type
+        var request = getCommonUrlRequest(url: url)
+        request.httpMethod = "POST"
+        
+        //Setting headers
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        //Setting body for POST request
+        request.httpBody = jsonData
+        
+        return URLSession.shared.dataTaskPublisher(for: request)
+            .handleEvents(receiveSubscription: { _ in
+                self.showLoader.send(true)
+            }, receiveOutput: { _ in
+                self.showLoader.send(false)
+            }, receiveCompletion: { _ in
+                self.showLoader.send(false)
+            }, receiveCancel: {
+                self.showLoader.send(false)
+            })
+            .tryMap { data, response -> Data in
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    throw NetworkApiService.APIFailureCondition.InvalidServerResponse
+                }
+                
+                return data
+        }
+        .retry(1)
+        .decode(type: PostAmountResponse.self, decoder: JSONDecoder())
+        .receive(on: RunLoop.main)
+        .eraseToAnyPublisher()
+    }
+    
+    func checkFosterStatus() {
+        self.fosterStatusSubscriber = self.executeFosterStatusApiCall()?
+            .sink(receiveCompletion: { completion in
+                switch completion {
+                    case .finished:
+                        break
+                    case .failure(let error):
+                        self.errorToastPublisher.send((true, error.localizedDescription))
+                        print(error.localizedDescription)
+                }
+            }, receiveValue: { response in
+                if let resstate = response.resdata.resstate {
+                    if resstate == true {
+                        self.saveFosterRecharge(fosterModel: response.resdata.fosterRes ?? "")
+                    } else {
+                        self.errorToastPublisher.send((true, "Recharge not successful !"))
+                    }
+                }
+            })
+    }
+    
+    func executeFosterStatusApiCall() -> AnyPublisher<FosterStatusCheckModel, Error>? {
+//        let jsonObject = ["statusCheckUrl": fosterStatusUrl]
+        let jsonObject = ["statusCheckUrl": "https://demo.fosterpayments.com.bd/fosterpayments/TransactionStatus/txstatus.php?mcnt_TxnNo=Txn542&mcnt_SecureHashValue=0f3bfacff3f2e72af4182c23d22982ee"]
+        let jsonArray = [jsonObject]
+        if !JSONSerialization.isValidJSONObject(jsonArray) {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        
+        let tempJson = try? JSONSerialization.data(withJSONObject: jsonArray, options: [])
+        
+        guard let jsonData = tempJson else {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        
+        guard let urlComponents = URLComponents(string: NetworkApiService.webBaseUrl+"/api/billclouduserclient/cloudrechargesave") else {
+            print("Problem in UrlComponent creation...")
+            return nil
+        }
+        
+        guard let url = urlComponents.url else {
+            return nil
+        }
+        
+        //Request type
+        var request = getCommonUrlRequest(url: url)
+        request.httpMethod = "POST"
+        
+        //Setting headers
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        //Setting body for POST request
+        request.httpBody = jsonData
+        
+        return URLSession.shared.dataTaskPublisher(for: request)
+            .handleEvents(receiveSubscription: { _ in
+                self.showLoader.send(true)
+            }, receiveOutput: { _ in
+                self.showLoader.send(false)
+            }, receiveCompletion: { _ in
+                self.showLoader.send(false)
+            }, receiveCancel: {
+                self.showLoader.send(false)
+            })
+            .tryMap { data, response -> Data in
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    throw NetworkApiService.APIFailureCondition.InvalidServerResponse
+                }
+                
+                return data
+        }
+        .retry(1)
+        .decode(type: FosterStatusCheckModel.self, decoder: JSONDecoder())
+        .receive(on: RunLoop.main)
+        .eraseToAnyPublisher()
+    }
+    
+    func saveFosterRecharge(fosterModel: String) {
+        self.fosterRechargeSaveSubscriber = self.executeFosterRechargeSaveApiCall(fosterModel: fosterModel)?
+            .sink(receiveCompletion: { completion in
+                switch completion {
+                    case .finished:
+                        break
+                    case .failure(let error):
+                        self.errorToastPublisher.send((true, error.localizedDescription))
+                        print(error.localizedDescription)
+                }
+            }, receiveValue: { response in
+                if let resstate = response.resdata.resstate {
+                    if resstate == true {
+                        self.successToastPublisher.send((true, response.resdata.message ?? "Recharge successful"))
+                        self.refreshUI()
+                    } else {
+                        self.errorToastPublisher.send((true, response.resdata.message ?? "Recharge not successful"))
+                    }
+                }
+            })
+    }
+    
+    func executeFosterRechargeSaveApiCall(fosterModel: String) -> AnyPublisher<DefaultResponse, Error>? {
+        
+        let fosterData = Data(fosterModel.utf8)
+        let fosterResponseModelArray = try? JSONDecoder().decode([FosterModel].self, from: fosterData)
+        let fosterResponseModel = fosterResponseModelArray?[0]
+        let user = UserLocalStorage.getUser()
+        let date = Date()
+        let format = DateFormatter()
+        format.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let today = format.string(from: date)
+        let jsonObject = ["CloudUserID": user.userID ?? 0,
+                          "UserTypeId": user.userType ?? 0,
+                          "TransactionNo": fosterResponseModel?.MerchantTxnNo,
+                          "InvoiceId": 0,
+                          "UserName": user.displayName,
+                          "TransactionDate": today,
+                          "RechargeType": "foster",
+                          "BalanceAmount": fosterResponseModel?.TxnAmount,
+                          "Particulars": "",
+                          "IsActive": true] as [String : Any?]
+        let fosterJsonData = try! JSONEncoder().encode(fosterResponseModel)
+        let fosterJsonObject = try? JSONSerialization.jsonObject(with: fosterJsonData, options: .allowFragments) as? [String: Any?]
+        
+        let jsonArray = [jsonObject, fosterJsonObject]
+        if !JSONSerialization.isValidJSONObject(jsonArray) {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        
+        let tempJson = try? JSONSerialization.data(withJSONObject: jsonArray, options: [])
+        
+        guard let jsonData = tempJson else {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        
+        guard let urlComponents = URLComponents(string: NetworkApiService.webBaseUrl + "/api/portal/newrechargesave") else {
+            print("Problem in UrlComponent creation...")
+            return nil
+        }
+        
+        guard let url = urlComponents.url else {
+            return nil
+        }
+        
+        //Request type
+        var request = getCommonUrlRequest(url: url)
+        request.httpMethod = "POST"
+        
+        //Setting headers
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        //Setting body for POST request
+        request.httpBody = jsonData
+        
+        return URLSession.shared.dataTaskPublisher(for: request)
+            .handleEvents(receiveSubscription: { _ in
+                self.showLoader.send(true)
+            }, receiveOutput: { _ in
+                self.showLoader.send(false)
+            }, receiveCompletion: { _ in
+                self.showLoader.send(false)
+            }, receiveCancel: {
+                self.showLoader.send(false)
+            })
+            .tryMap { data, response -> Data in
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    throw NetworkApiService.APIFailureCondition.InvalidServerResponse
+                }
+                
+                return data
+        }
+        .retry(1)
+        .decode(type: DefaultResponse.self, decoder: JSONDecoder())
+        .receive(on: RunLoop.main)
+        .eraseToAnyPublisher()
+    }
+    
+    func getUserBalance() {
+        self.userBalanceSubscriber = self.executeUserBalanceApiCall()?
+            .sink(receiveCompletion: { completion in
+                switch completion {
+                    case .finished:
+                        break
+                    case .failure(let error):
+                        print(error.localizedDescription)
+                }
+            }, receiveValue: { response in
+                self.userBalance = response.resdata.billCloudUserBalance.balanceAmount ?? 0.0
+            })
+    }
+    
+    func executeUserBalanceApiCall() -> AnyPublisher<UserBalanceModel, Error>? {
+        let user = UserLocalStorage.getUser()
+        let jsonObject = ["UserID": user.userID ?? 0] as [String : Any]
+        let jsonArray = [jsonObject]
+        if !JSONSerialization.isValidJSONObject(jsonArray) {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        let tempJson = try? JSONSerialization.data(withJSONObject: jsonArray, options: [])
+        guard let jsonData = tempJson else {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        let tempParams = String(data: jsonData, encoding: String.Encoding.ascii)
+        guard let params = tempParams else {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        var queryItems = [URLQueryItem]()
+        
+        queryItems.append(URLQueryItem(name: "param", value: params))
+        guard var urlComponents = URLComponents(string: NetworkApiService.webBaseUrl+"/api/portal/billclouduserbalance") else {
+            print("Problem in UrlComponent creation...")
+            return nil
+        }
+        urlComponents.queryItems = queryItems
+        
+        guard let url = urlComponents.url else {
+            return nil
+        }
+        
+        var request = getCommonUrlRequest(url: url)
+        request.httpMethod = "GET"
+        
+        return URLSession.shared.dataTaskPublisher(for: request)
+            .handleEvents(receiveSubscription: { _ in
+                self.showLoader.send(true)
+            }, receiveOutput: { _ in
+                self.showLoader.send(false)
+            }, receiveCompletion: { _ in
+                self.showLoader.send(false)
+            }, receiveCancel: {
+                self.showLoader.send(false)
+            })
+            .tryMap { data, response -> Data in
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    throw NetworkApiService.APIFailureCondition.InvalidServerResponse
+                }
+                
+                return data
+        }
+        .retry(1)
+        .decode(type: UserBalanceModel.self, decoder: JSONDecoder())
+        .receive(on: RunLoop.main)
+        .eraseToAnyPublisher()
+    }
+    
+    func getLastRecharge() {
+        self.lastRechargeSubscriber = self.executeLastRechargeApiCall()?
+            .sink(receiveCompletion: { completion in
+                switch completion {
+                    case .finished:
+                        break
+                    case .failure(let error):
+                        print(error.localizedDescription)
+                }
+            }, receiveValue: { response in
+                self.userLastRecharge = response.resdata.objBilCloudUserLedger.creditAmount ?? 0.0
+                self.userLastRechargeDate = String((response.resdata.objBilCloudUserLedger.transactionDate ?? "").split(separator: "T")[0])
+            })
+    }
+    
+    func executeLastRechargeApiCall() -> AnyPublisher<LastRechargeBalance, Error>? {
+        let user = UserLocalStorage.getUser()
+        let jsonObject = ["UserID": user.userID ?? 0] as [String : Any]
+        let jsonArray = [jsonObject]
+        if !JSONSerialization.isValidJSONObject(jsonArray) {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        let tempJson = try? JSONSerialization.data(withJSONObject: jsonArray, options: [])
+        guard let jsonData = tempJson else {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        let tempParams = String(data: jsonData, encoding: String.Encoding.ascii)
+        guard let params = tempParams else {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        var queryItems = [URLQueryItem]()
+        
+        queryItems.append(URLQueryItem(name: "param", value: params))
+        guard var urlComponents = URLComponents(string: NetworkApiService.webBaseUrl+"/api/portal/lastbillbyuser") else {
+            print("Problem in UrlComponent creation...")
+            return nil
+        }
+        urlComponents.queryItems = queryItems
+        
+        guard let url = urlComponents.url else {
+            return nil
+        }
+        
+        var request = getCommonUrlRequest(url: url)
+        request.httpMethod = "GET"
+        
+        return URLSession.shared.dataTaskPublisher(for: request)
+            .handleEvents(receiveSubscription: { _ in
+                self.showLoader.send(true)
+            }, receiveOutput: { _ in
+                self.showLoader.send(false)
+            }, receiveCompletion: { _ in
+                self.showLoader.send(false)
+            }, receiveCancel: {
+                self.showLoader.send(false)
+            })
+            .tryMap { data, response -> Data in
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    throw NetworkApiService.APIFailureCondition.InvalidServerResponse
+                }
+                
+                return data
+        }
+        .retry(1)
+        .decode(type: LastRechargeBalance.self, decoder: JSONDecoder())
+        .receive(on: RunLoop.main)
+        .eraseToAnyPublisher()
+    }
+    
+    func refreshUI() {
+        getUserBalance()
+        getLastRecharge()
+    }
+}
