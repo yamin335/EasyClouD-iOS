@@ -56,7 +56,7 @@ struct ContactView: View {
                             .foregroundColor(.gray)
                     }
                     Spacer()
-                }
+                }.padding(.leading, 20)
             }
             
             Button(action: {
@@ -76,7 +76,7 @@ struct ContactView: View {
                             .foregroundColor(.gray)
                     }
                     Spacer()
-                }
+                }.padding(.leading, 20)
             }
             
             Button(action: {
@@ -96,7 +96,7 @@ struct ContactView: View {
                             .foregroundColor(.gray)
                     }
                     Spacer()
-                }
+                }.padding(.leading, 20)
             }
             
             Button(action: {
@@ -117,7 +117,7 @@ struct ContactView: View {
                             .foregroundColor(.gray)
                     }
                     Spacer()
-                }
+                }.padding(.leading, 20)
             }
             
             Button(action: {
@@ -143,10 +143,10 @@ struct ContactView: View {
                             .foregroundColor(.gray)
                     }
                     Spacer()
-                }
+                }.padding(.leading, 20)
             }
             
-            HStack {
+            HStack(spacing: 3) {
                 Image("icons8_facebook_circled_36")
                     .resizable()
                     .frame(width: 36, height: 36)
@@ -159,7 +159,9 @@ struct ContactView: View {
                         .foregroundColor(.gray)
                 }
                 Spacer()
-            }.padding(.top, 5).onTapGesture {
+            }.padding(.top, 5)
+                .padding(.leading, 17)
+                .onTapGesture {
                 let screenName = "Royalgreenbd"
                 let appURL = NSURL(string: "facebook://user?screen_name=\(screenName)")!
                 let webURL = NSURL(string: "https://facebook.com/\(screenName)")!
@@ -181,7 +183,7 @@ struct ContactView: View {
             }
             
             Spacer()
-        }.navigationBarTitle(Text("Contact")).padding(.all, 20)
+        }.navigationBarTitle(Text("Contact"))
     }
     
     func mailComposeController(controller: MFMailComposeViewController,

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		FD83533E23B9FEB00057353E /* MainContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD83533D23B9FEB00057353E /* MainContainerView.swift */; };
 		FD8CC9C723B1F678001CDBD1 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD8CC9C623B1F678001CDBD1 /* AppDelegate.swift */; };
 		FD8CC9C923B1F678001CDBD1 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD8CC9C823B1F678001CDBD1 /* SceneDelegate.swift */; };
 		FD8CC9CD23B1F697001CDBD1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FD8CC9CC23B1F697001CDBD1 /* Assets.xcassets */; };
@@ -51,7 +52,6 @@
 		FD8CCA4D23B1F8FB001CDBD1 /* DashboardResponseModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD8CCA1823B1F8F9001CDBD1 /* DashboardResponseModels.swift */; };
 		FD8CCA4E23B1F8FB001CDBD1 /* LoginScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD8CCA1923B1F8F9001CDBD1 /* LoginScreen.swift */; };
 		FD8CCA4F23B1F8FB001CDBD1 /* ContactView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD8CCA1A23B1F8F9001CDBD1 /* ContactView.swift */; };
-		FD8CCA5023B1F8FB001CDBD1 /* MainContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD8CCA1B23B1F8F9001CDBD1 /* MainContainerView.swift */; };
 		FD8CCA5123B1F8FB001CDBD1 /* DefaultApiResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD8CCA1C23B1F8F9001CDBD1 /* DefaultApiResponse.swift */; };
 		FD8CCA5223B1F8FB001CDBD1 /* ContactViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD8CCA1D23B1F8F9001CDBD1 /* ContactViewModel.swift */; };
 		FD8CCA5323B1F8FB001CDBD1 /* PieChartModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD8CCA1E23B1F8FA001CDBD1 /* PieChartModel.swift */; };
@@ -87,6 +87,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		FD83533D23B9FEB00057353E /* MainContainerView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MainContainerView.swift; sourceTree = "<group>"; };
 		FD8CC9C323B1F678001CDBD1 /* PacEClouD iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "PacEClouD iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FD8CC9C623B1F678001CDBD1 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		FD8CC9C823B1F678001CDBD1 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
@@ -137,7 +138,6 @@
 		FD8CCA1823B1F8F9001CDBD1 /* DashboardResponseModels.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = DashboardResponseModels.swift; sourceTree = "<group>"; };
 		FD8CCA1923B1F8F9001CDBD1 /* LoginScreen.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = LoginScreen.swift; sourceTree = "<group>"; };
 		FD8CCA1A23B1F8F9001CDBD1 /* ContactView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ContactView.swift; sourceTree = "<group>"; };
-		FD8CCA1B23B1F8F9001CDBD1 /* MainContainerView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MainContainerView.swift; sourceTree = "<group>"; };
 		FD8CCA1C23B1F8F9001CDBD1 /* DefaultApiResponse.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = DefaultApiResponse.swift; sourceTree = "<group>"; };
 		FD8CCA1D23B1F8F9001CDBD1 /* ContactViewModel.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ContactViewModel.swift; sourceTree = "<group>"; };
 		FD8CCA1E23B1F8FA001CDBD1 /* PieChartModel.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PieChartModel.swift; sourceTree = "<group>"; };
@@ -224,7 +224,7 @@
 				FD8CCA0B23B1F8F8001CDBD1 /* LoginResponseModels.swift */,
 				FD8CCA1923B1F8F9001CDBD1 /* LoginScreen.swift */,
 				FD8CC9FF23B1F8F7001CDBD1 /* LoginViewModel.swift */,
-				FD8CCA1B23B1F8F9001CDBD1 /* MainContainerView.swift */,
+				FD83533D23B9FEB00057353E /* MainContainerView.swift */,
 				FD8CCA0723B1F8F7001CDBD1 /* MainScreen.swift */,
 				FD8CCA0F23B1F8F8001CDBD1 /* MoreMenuView.swift */,
 				FD8CCA1F23B1F8FA001CDBD1 /* NetworkApiService.swift */,
@@ -470,11 +470,11 @@
 				FD8CCA4A23B1F8FB001CDBD1 /* DashboardView.swift in Sources */,
 				FD8CCA3F23B1F8FB001CDBD1 /* VMDeploymentListView.swift in Sources */,
 				FD8CCA4523B1F8FB001CDBD1 /* WedgeView.swift in Sources */,
+				FD83533E23B9FEB00057353E /* MainContainerView.swift in Sources */,
 				FD8CCA2F23B1F8FB001CDBD1 /* PrivacyView.swift in Sources */,
 				FD8CCA5823B1F8FB001CDBD1 /* SignUpLastNameView.swift in Sources */,
 				FD8CCA4C23B1F8FB001CDBD1 /* VirtualMachineViewModel.swift in Sources */,
 				FD8CCA4323B1F8FB001CDBD1 /* TestView.swift in Sources */,
-				FD8CCA5023B1F8FB001CDBD1 /* MainContainerView.swift in Sources */,
 				FD8CCA4223B1F8FB001CDBD1 /* SignUpFirstNameView.swift in Sources */,
 				FD8CCA2B23B1F8FB001CDBD1 /* ErrorToast.swift in Sources */,
 				FD8CCA5423B1F8FB001CDBD1 /* NetworkApiService.swift in Sources */,
