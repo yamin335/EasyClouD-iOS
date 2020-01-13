@@ -59,7 +59,7 @@ struct MainScreen: View {
                     }
             }
             .tag(4)
-        }.accentColor(Colors.greenTheme)
+        }.accentColor(Colors.greenTheme).edgesIgnoringSafeArea(.top)
     }
 }
 

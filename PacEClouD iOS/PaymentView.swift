@@ -20,6 +20,7 @@ struct PaymentView: View {
     @State var showRechargeConfDialog = false
     @State var disableOkButton = true
     @State var showFosterWebView = false
+    @State var showBkashWebView = false
     
     // Toasts
     @State var showSuccessToast = false
@@ -174,11 +175,11 @@ struct PaymentView: View {
                     
                     Button(action: {
                         self.showRechargeDialog = false
-                        self.viewModel.postAmount()
+                        self.showRechargeConfDialog = true
                     }) {
                         HStack{
                             Spacer()
-                            Text("Ok")
+                            Text("Pay")
                                 .foregroundColor(.white)
                             Spacer()
                         }
@@ -262,10 +263,27 @@ struct PaymentView: View {
                     .padding(.bottom, 20)
                     .onTapGesture {
                         self.viewModel.showLoader.send(true)
+                        self.viewModel.getFosterPaymentUrl()
+                        
                         self.showRechargeConfDialog = false
                         self.viewModel.rechargeAmount = ""
                         self.note = ""
-                        self.showFosterWebView = true
+                }
+                
+                Image("bkash_payment_logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(minWidth: 0, maxWidth: .infinity)
+                    .padding(.leading, 35)
+                    .padding(.trailing, 35)
+                    .padding(.top, 16)
+                    .padding(.bottom, 20)
+                    .onTapGesture {
+                        self.viewModel.showLoader.send(true)
+                        self.viewModel.getBkashToken()
+                        self.showRechargeConfDialog = false
+                        self.viewModel.rechargeAmount = ""
+                        self.note = ""
                 }
             }
             .frame(minWidth: 0, maxWidth: .infinity)
@@ -276,7 +294,7 @@ struct PaymentView: View {
         }
     }
     
-    struct WebView: UIViewRepresentable {
+    struct FosterWebView: UIViewRepresentable {
         var viewModel: PaymentViewModel
         
         func makeCoordinator() -> Coordinator {
@@ -287,22 +305,21 @@ struct PaymentView: View {
             let webView = WKWebView()
             webView.navigationDelegate = context.coordinator
             webView.allowsBackForwardNavigationGestures = true
-//            webView.scrollView.isScrollEnabled = false
+            webView.scrollView.isScrollEnabled = true
             return webView
         }
         
         func updateUIView(_ webView: WKWebView, context: Context) {
             if let url = URL(string: viewModel.fosterProcessUrl) {
-//                webView.load(URLRequest(url: url))
-                webView.load(URLRequest(url: URL(string: "https://demo.fosterpayments.com.bd/fosterpayments/validationalldata.php?payment_id=Fost7213b00.99833731-39812-fCWly")!))
+                webView.load(URLRequest(url: url))
             }
         }
         
         class Coordinator : NSObject, WKNavigationDelegate {
             
-            var parent: WebView
+            var parent: FosterWebView
             
-            init(_ uiWebView: WebView) {
+            init(_ uiWebView: FosterWebView) {
                 self.parent = uiWebView
             }
             
@@ -329,13 +346,13 @@ struct PaymentView: View {
             func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
                 print("Started provisioning!!!")
                 parent.viewModel.showLoader.send(true)
-                parent.viewModel.webViewNavigationPublisher.receive(on: RunLoop.main).sink(receiveValue: { navigation in
+                parent.viewModel.fosterWebViewNavigationPublisher.receive(on: RunLoop.main).sink(receiveValue: { navigation in
                     if navigation == "Back" && webView.canGoBack {
                         webView.goBack()
                     } else if navigation == "Next" && webView.canGoForward {
                         webView.goForward()
                     } else if navigation == "Back" && !webView.canGoBack {
-                        self.parent.viewModel.showWebViewPublisher.send(false)
+                        self.parent.viewModel.showFosterWebViewPublisher.send(false)
                     }
                 })
             }
@@ -345,13 +362,89 @@ struct PaymentView: View {
                     if host == "pacecloud.com" {
                         let response = navigationAction.request.description.description.split(separator: "?")[1].split(separator: "=")
                         if response[0] == "paymentStatus" && response[1] == "true" {
-                            parent.viewModel.showWebViewPublisher.send(false)
+                            parent.viewModel.showFosterWebViewPublisher.send(false)
                             parent.viewModel.checkFosterStatus()
                         } else if response[0] == "paymentStatus" && response[1] == "false" {
-                            parent.viewModel.showWebViewPublisher.send(false)
+                            parent.viewModel.showFosterWebViewPublisher.send(false)
                             print("FAILURE")
                         }
 
+                        decisionHandler(.cancel)
+                        return
+                    }
+                }
+                
+                decisionHandler(.allow)
+            }
+        }
+    }
+    
+    struct BKashWebView: UIViewRepresentable {
+        var viewModel: PaymentViewModel
+        
+        func makeCoordinator() -> Coordinator {
+            Coordinator(self)
+        }
+        
+        func makeUIView(context: Context) -> WKWebView {
+            let webView = WKWebView()
+            webView.navigationDelegate = context.coordinator
+            webView.allowsBackForwardNavigationGestures = true
+            webView.scrollView.isScrollEnabled = true
+            return webView
+        }
+        
+        func updateUIView(_ webView: WKWebView, context: Context) {
+            if let bkashUrl = Bundle.main.url(forResource: "checkout_120", withExtension: "html") {
+                webView.load(URLRequest(url: bkashUrl))
+            }
+        }
+        
+        class Coordinator : NSObject, WKNavigationDelegate {
+            
+            var parent: BKashWebView
+            
+            init(_ uiWebView: BKashWebView) {
+                self.parent = uiWebView
+            }
+            
+            func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+                parent.viewModel.showLoader.send(false)
+            }
+            
+            func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+                parent.viewModel.showLoader.send(false)
+            }
+            
+            func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+                parent.viewModel.showLoader.send(false)
+            }
+            
+            func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+                parent.viewModel.showLoader.send(true)
+                parent.viewModel.bkashWebViewNavigationPublisher.receive(on: RunLoop.main).sink(receiveValue: { navigation in
+                    if navigation == "Back" && webView.canGoBack {
+                        webView.goBack()
+                    } else if navigation == "Next" && webView.canGoForward {
+                        webView.goForward()
+                    } else if navigation == "Back" && !webView.canGoBack {
+                        self.parent.viewModel.showBkashWebViewPublisher.send(false)
+                    }
+                })
+            }
+            
+            func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+                if let host = navigationAction.request.url?.host {
+                    if host == "pacecloud.com" {
+                        let response = navigationAction.request.description.description.split(separator: "?")[1].split(separator: "=")
+                        if response[0] == "paymentStatus" && response[1] == "true" {
+                            parent.viewModel.showFosterWebViewPublisher.send(false)
+                            parent.viewModel.checkFosterStatus()
+                        } else if response[0] == "paymentStatus" && response[1] == "false" {
+                            parent.viewModel.showFosterWebViewPublisher.send(false)
+                            print("FAILURE")
+                        }
+                        
                         decisionHandler(.cancel)
                         return
                     }
@@ -367,7 +460,7 @@ struct PaymentView: View {
             HStack {
                 Spacer()
                 Button(action: {
-                    self.viewModel.webViewNavigationPublisher.send("Back")
+                    self.viewModel.fosterWebViewNavigationPublisher.send("Back")
                 }) {
                     HStack {
                         Image(systemName: "arrow.turn.up.left")
@@ -382,7 +475,7 @@ struct PaymentView: View {
                 Divider()
                 Spacer()
                 Button(action: {
-                    self.viewModel.webViewNavigationPublisher.send("Next")
+                    self.viewModel.fosterWebViewNavigationPublisher.send("Next")
                 }) {
                     HStack {
                         Text("Next")
@@ -396,7 +489,47 @@ struct PaymentView: View {
                 Spacer()
             }.frame(height: 36)
             Divider()
-            WebView(viewModel: self.viewModel)
+            FosterWebView(viewModel: self.viewModel)
+        }
+        .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
+        .background(Color.white)
+    }
+    
+    var rechargeBKashWebView: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button(action: {
+                    self.viewModel.bkashWebViewNavigationPublisher.send("Back")
+                }) {
+                    HStack {
+                        Image(systemName: "arrow.turn.up.left")
+                            .font(.system(size: 18, weight: .ultraLight))
+                            .imageScale(.large)
+                            .accessibility(label: Text("Close Recharge Confirmation Dialog"))
+                            .foregroundColor(.gray)
+                        Text("Back")
+                    }
+                }
+                Spacer()
+                Divider()
+                Spacer()
+                Button(action: {
+                    self.viewModel.bkashWebViewNavigationPublisher.send("Next")
+                }) {
+                    HStack {
+                        Text("Next")
+                        Image(systemName: "arrow.turn.up.right")
+                            .font(.system(size: 18, weight: .ultraLight))
+                            .imageScale(.large)
+                            .accessibility(label: Text("Close Recharge Confirmation Dialog"))
+                            .foregroundColor(.gray)
+                    }
+                }
+                Spacer()
+            }.frame(height: 36)
+            Divider()
+            BKashWebView(viewModel: self.viewModel)
         }
         .frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, maxHeight: .infinity)
         .background(Color.white)
@@ -449,6 +582,10 @@ struct PaymentView: View {
                 if showFosterWebView {
                     rechargeFosterWebView
                 }
+                
+                if showBkashWebView {
+                    rechargeBKashWebView
+                }
 
                 if showSuccessToast {
                     VStack {
@@ -482,11 +619,11 @@ struct PaymentView: View {
                     SpinLoaderView()
                 }
             }
-            .onReceive(self.viewModel.showWebViewPublisher.receive(on: RunLoop.main)) { shouldShow in
+            .onReceive(self.viewModel.showFosterWebViewPublisher.receive(on: RunLoop.main)) { shouldShow in
                 self.showFosterWebView = shouldShow
             }
-            .onReceive(self.viewModel.rechargeConfDialogPublisher.receive(on: RunLoop.main)) { shouldShow in
-                self.showRechargeConfDialog = shouldShow
+            .onReceive(self.viewModel.showBkashWebViewPublisher.receive(on: RunLoop.main)) { shouldShow in
+                self.showBkashWebView = shouldShow
             }
             .onReceive(self.viewModel.showLoader.receive(on: RunLoop.main)) { shouldShow in
                 self.showLoader = shouldShow

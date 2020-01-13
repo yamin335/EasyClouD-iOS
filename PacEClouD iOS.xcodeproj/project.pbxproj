@@ -67,6 +67,7 @@
 		FD8CCA5D23B1F8FB001CDBD1 /* PieChartLegendView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD8CCA2823B1F8FA001CDBD1 /* PieChartLegendView.swift */; };
 		FD8CCA5E23B1F8FB001CDBD1 /* PieChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD8CCA2923B1F8FA001CDBD1 /* PieChartView.swift */; };
 		FD8CCA5F23B1F8FB001CDBD1 /* DashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD8CCA2A23B1F8FB001CDBD1 /* DashboardViewModel.swift */; };
+		FDD4A5E423CC77FD008D87B9 /* www in Resources */ = {isa = PBXBuildFile; fileRef = FDD4A5E323CC77FD008D87B9 /* www */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -153,6 +154,7 @@
 		FD8CCA2823B1F8FA001CDBD1 /* PieChartLegendView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PieChartLegendView.swift; sourceTree = "<group>"; };
 		FD8CCA2923B1F8FA001CDBD1 /* PieChartView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PieChartView.swift; sourceTree = "<group>"; };
 		FD8CCA2A23B1F8FB001CDBD1 /* DashboardViewModel.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = DashboardViewModel.swift; sourceTree = "<group>"; };
+		FDD4A5E323CC77FD008D87B9 /* www */ = {isa = PBXFileReference; lastKnownFileType = folder; path = www; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -203,6 +205,7 @@
 		FD8CC9C523B1F678001CDBD1 /* PacEClouD iOS */ = {
 			isa = PBXGroup;
 			children = (
+				FDD4A5E323CC77FD008D87B9 /* www */,
 				FD8CC9D423B1F698001CDBD1 /* Info.plist */,
 				FD8CC9C623B1F678001CDBD1 /* AppDelegate.swift */,
 				FD8CCA2123B1F8FA001CDBD1 /* BarChartColumnView.swift */,
@@ -396,6 +399,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FDD4A5E423CC77FD008D87B9 /* www in Resources */,
 				FD8CC9D323B1F698001CDBD1 /* LaunchScreen.storyboard in Resources */,
 				FD8CC9D023B1F698001CDBD1 /* Preview Assets.xcassets in Resources */,
 				FD8CC9CD23B1F697001CDBD1 /* Assets.xcassets in Resources */,

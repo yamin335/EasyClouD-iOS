@@ -29,11 +29,16 @@ struct MoreMenuView: View {
     
     var body: some View {
         NavigationView {
-            VStack {
-                Text("More Menu View")
-            }
-            .navigationBarTitle(Text("Menu"))
-            .navigationBarItems(trailing: signoutButton)
+            Form {
+                Section(header: Text("General Settings")) {
+                    Button(action: {
+                        //
+                    }) {
+                        Text("Change Password").foregroundColor(.black)
+                    }
+                }
+            }.navigationBarTitle(Text("More"))
+                .navigationBarItems(trailing: signoutButton)
         }
     }
 }

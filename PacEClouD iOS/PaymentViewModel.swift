@@ -41,17 +41,21 @@ class PaymentViewModel: ObservableObject {
     private var validAmountChecker: AnyCancellable? = nil
     private var fosterStatusSubscriber: AnyCancellable? = nil
     private var fosterRechargeSaveSubscriber: AnyCancellable? = nil
+    private var getBkashTokenSubscriber: AnyCancellable? = nil
     
     var showLoader = PassthroughSubject<Bool, Never>()
     var errorToastPublisher = PassthroughSubject<(Bool, String), Never>()
     var successToastPublisher = PassthroughSubject<(Bool, String), Never>()
-    var rechargeConfDialogPublisher = PassthroughSubject<Bool, Never>()
     var okButtonDisablePublisher = PassthroughSubject<Bool, Never>()
-    var webViewNavigationPublisher = PassthroughSubject<String, Never>()
-    var showWebViewPublisher = PassthroughSubject<Bool, Never>()
+    var fosterWebViewNavigationPublisher = PassthroughSubject<String, Never>()
+    var bkashWebViewNavigationPublisher = PassthroughSubject<String, Never>()
+    var showFosterWebViewPublisher = PassthroughSubject<Bool, Never>()
+    var showBkashWebViewPublisher = PassthroughSubject<Bool, Never>()
     
     var fosterStatusUrl = ""
     var fosterProcessUrl = ""
+    
+    var bkashTokenModel: TModel? = nil
     private var validDigits = CharacterSet(charactersIn: "1234567890.")
     
     init() {
@@ -92,10 +96,81 @@ class PaymentViewModel: ObservableObject {
         validAmountChecker?.cancel()
         fosterStatusSubscriber?.cancel()
         fosterRechargeSaveSubscriber?.cancel()
+        getBkashTokenSubscriber?.cancel()
     }
     
-    func postAmount() {
-        self.postAmountSubscriber = self.executePostAmountApiCall()?
+    func getBkashToken() {
+        self.getBkashTokenSubscriber = self.executeGetBkashTokenApiCall()?
+            .sink(receiveCompletion: { completion in
+                switch completion {
+                    case .finished:
+                        break
+                    case .failure(let error):
+                        print(error.localizedDescription)
+                }
+            }, receiveValue: { response in
+                self.bkashTokenModel = response.resdata?.tModel
+            })
+    }
+    
+    func executeGetBkashTokenApiCall() -> AnyPublisher<BKashTokenResponse, Error>? {
+        let jsonObject = ["id": 0]
+        let jsonArray = [jsonObject]
+        if !JSONSerialization.isValidJSONObject(jsonArray) {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        let tempJson = try? JSONSerialization.data(withJSONObject: jsonArray, options: [])
+        guard let jsonData = tempJson else {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        let tempParams = String(data: jsonData, encoding: String.Encoding.ascii)
+        guard let params = tempParams else {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        var queryItems = [URLQueryItem]()
+        
+        queryItems.append(URLQueryItem(name: "param", value: params))
+        guard var urlComponents = URLComponents(string: NetworkApiService.webBaseUrl+"/api/portal/generatebkashtoken") else {
+            print("Problem in UrlComponent creation...")
+            return nil
+        }
+        urlComponents.queryItems = queryItems
+        
+        guard let url = urlComponents.url else {
+            return nil
+        }
+        
+        var request = getCommonUrlRequest(url: url)
+        request.httpMethod = "GET"
+        
+        return URLSession.shared.dataTaskPublisher(for: request)
+            .handleEvents(receiveSubscription: { _ in
+                self.showLoader.send(true)
+            }, receiveOutput: { _ in
+                self.showLoader.send(false)
+            }, receiveCompletion: { _ in
+                self.showLoader.send(false)
+            }, receiveCancel: {
+                self.showLoader.send(false)
+            })
+            .tryMap { data, response -> Data in
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    throw NetworkApiService.APIFailureCondition.InvalidServerResponse
+                }
+                
+                return data
+        }
+        .retry(1)
+        .decode(type: BKashTokenResponse.self, decoder: JSONDecoder())
+        .receive(on: RunLoop.main)
+        .eraseToAnyPublisher()
+    }
+    
+    func getFosterPaymentUrl() {
+        self.postAmountSubscriber = self.executeGetFosterUrlApiCall()?
             .sink(receiveCompletion: { completion in
                 switch completion {
                     case .finished:
@@ -108,7 +183,7 @@ class PaymentViewModel: ObservableObject {
             }, receiveValue: { response in
                 if let resstate = response.resdata.resstate {
                     if resstate == true {
-                        self.rechargeConfDialogPublisher.send(true)
+                        self.showFosterWebViewPublisher.send(true)
                         self.fosterStatusUrl = response.resdata.paymentStatusUrl ?? ""
                         self.fosterProcessUrl = response.resdata.paymentProcessUrl ?? ""
                         print(self.fosterStatusUrl)
@@ -119,7 +194,7 @@ class PaymentViewModel: ObservableObject {
             })
     }
     
-    func executePostAmountApiCall() -> AnyPublisher<PostAmountResponse, Error>? {
+    func executeGetFosterUrlApiCall() -> AnyPublisher<PostAmountResponse, Error>? {
         let user = UserLocalStorage.getUser()
         let jsonObject = ["UserID": user.userID ?? 0, "rechargeAmount": rechargeAmount] as [String : Any]
         let jsonArray = [jsonObject]
@@ -199,8 +274,7 @@ class PaymentViewModel: ObservableObject {
     }
     
     func executeFosterStatusApiCall() -> AnyPublisher<FosterStatusCheckModel, Error>? {
-//        let jsonObject = ["statusCheckUrl": fosterStatusUrl]
-        let jsonObject = ["statusCheckUrl": "https://demo.fosterpayments.com.bd/fosterpayments/TransactionStatus/txstatus.php?mcnt_TxnNo=Txn542&mcnt_SecureHashValue=0f3bfacff3f2e72af4182c23d22982ee"]
+        let jsonObject = ["statusCheckUrl": fosterStatusUrl]
         let jsonArray = [jsonObject]
         if !JSONSerialization.isValidJSONObject(jsonArray) {
             print("Problem in parameter creation...")

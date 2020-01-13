@@ -91,3 +91,22 @@ struct FosterModel: Codable {
     let hashkey: String?
     let message: String?
 }
+
+// MARK: - BKashTokenResponse
+struct BKashTokenResponse: Codable {
+    let resdata: BKashTokenResdata?
+}
+
+// MARK: - BKashTokenResdata
+struct BKashTokenResdata: Codable {
+    let resstate: Bool?
+    let tModel: TModel?
+}
+
+// MARK: - TModel
+struct TModel: Codable {
+    let token: String?
+    let appKey: String?
+    let currency: String?
+    let marchantInvNo: String?
+}
