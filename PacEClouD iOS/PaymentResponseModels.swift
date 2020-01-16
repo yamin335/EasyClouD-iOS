@@ -110,3 +110,34 @@ struct TModel: Codable {
     let currency: String?
     let marchantInvNo: String?
 }
+
+struct PaymentRequest : Codable {
+    let amount: String?
+    let intent: String? = "sale"
+    
+    init(amount: String?) {
+        self.amount = amount
+    }
+}
+
+// MARK: - BKashCreatePaymentResponse
+struct BKashCreatePaymentResponse: Codable {
+    let resdata: BKashCreatePaymentResdata?
+}
+
+// MARK: - BKashCreatePaymentResdata
+struct BKashCreatePaymentResdata : Codable {
+    let resstate: Bool?
+    let resbKash: String?
+}
+
+// MARK: - BKashExecutePaymentResponse
+struct BKashExecutePaymentResponse: Codable {
+    let resdata: BKashExecutePaymentResdata?
+}
+
+// MARK: - BKashExecutePaymentResdata
+struct BKashExecutePaymentResdata : Codable {
+    let resstate: Bool?
+    let resExecuteBk: String?
+}

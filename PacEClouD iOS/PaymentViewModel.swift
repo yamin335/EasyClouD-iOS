@@ -27,6 +27,7 @@ class PaymentViewModel: ObservableObject {
     }
     @Published var rechargeAmount: String = ""
     @Published var rechargeNote: String = ""
+    var paymentRequest: PaymentRequest? = nil
     @Published var invalidAmountMessage: String {
         willSet {
             objectWillChange.send(true)
@@ -42,6 +43,9 @@ class PaymentViewModel: ObservableObject {
     private var fosterStatusSubscriber: AnyCancellable? = nil
     private var fosterRechargeSaveSubscriber: AnyCancellable? = nil
     private var getBkashTokenSubscriber: AnyCancellable? = nil
+    private var createBkashPaymentSubscriber: AnyCancellable? = nil
+    private var executeBkashPaymentSubscriber: AnyCancellable? = nil
+    private var finishBkashPaymentSubscriber: AnyCancellable? = nil
     
     var showLoader = PassthroughSubject<Bool, Never>()
     var errorToastPublisher = PassthroughSubject<(Bool, String), Never>()
@@ -51,9 +55,13 @@ class PaymentViewModel: ObservableObject {
     var bkashWebViewNavigationPublisher = PassthroughSubject<String, Never>()
     var showFosterWebViewPublisher = PassthroughSubject<Bool, Never>()
     var showBkashWebViewPublisher = PassthroughSubject<Bool, Never>()
+    var bkashCreatePaymentPublisher = PassthroughSubject<String, Never>()
+    var bkashPaymentStatusPublisher = PassthroughSubject<(Bool, String?), Never>()
     
     var fosterStatusUrl = ""
     var fosterProcessUrl = ""
+    var bkashToken = ""
+    var bkashPaymentExecuteJson: [String: Any] = [:]
     
     var bkashTokenModel: TModel? = nil
     private var validDigits = CharacterSet(charactersIn: "1234567890.")
@@ -97,6 +105,9 @@ class PaymentViewModel: ObservableObject {
         fosterStatusSubscriber?.cancel()
         fosterRechargeSaveSubscriber?.cancel()
         getBkashTokenSubscriber?.cancel()
+        createBkashPaymentSubscriber?.cancel()
+        executeBkashPaymentSubscriber?.cancel()
+        finishBkashPaymentSubscriber?.cancel()
     }
     
     func getBkashToken() {
@@ -109,7 +120,12 @@ class PaymentViewModel: ObservableObject {
                         print(error.localizedDescription)
                 }
             }, receiveValue: { response in
-                self.bkashTokenModel = response.resdata?.tModel
+                if response.resdata?.tModel != nil {
+                    self.bkashTokenModel = response.resdata?.tModel
+                    self.showBkashWebViewPublisher.send(true)
+                } else {
+                    self.errorToastPublisher.send((true, "Did not get token, please try again!"))
+                }
             })
     }
     
@@ -165,6 +181,261 @@ class PaymentViewModel: ObservableObject {
         }
         .retry(1)
         .decode(type: BKashTokenResponse.self, decoder: JSONDecoder())
+        .receive(on: RunLoop.main)
+        .eraseToAnyPublisher()
+    }
+    
+    func createBkashPayment() {
+        self.createBkashPaymentSubscriber = self.createBkashPaymentApiCall()?
+            .sink(receiveCompletion: { completion in
+                switch completion {
+                    case .finished:
+                        break
+                    case .failure(let error):
+                        print(error.localizedDescription)
+                }
+            }, receiveValue: { response in
+                if !(response.resdata?.resbKash?.isEmpty)! && response.resdata?.resbKash != nil {
+                    self.bkashCreatePaymentPublisher.send((response.resdata?.resbKash)!)
+                } else {
+                    self.errorToastPublisher.send((true, "Can not create payment, please try again!"))
+                }
+            })
+    }
+    
+    func createBkashPaymentApiCall() -> AnyPublisher<BKashCreatePaymentResponse, Error>? {
+        
+        guard let data = bkashTokenModel?.token?.data(using: .utf8) else {
+            print("Problem in response data parsing...")
+            return nil
+        }
+        
+        let tokenJson = try? JSONSerialization.jsonObject(with: data, options: .allowFragments) as? [String: Any]
+        
+        bkashToken = tokenJson?["id_token"] as! String
+        
+        let jsonObject = ["authToken": tokenJson?["id_token"] as? String,
+                          "rechargeAmount": rechargeAmount,
+                          "Name": "sale",
+                          "currency": bkashTokenModel?.currency,
+                          "mrcntNumber": bkashTokenModel?.marchantInvNo] as [String : Any?]
+        let jsonArray = [jsonObject]
+        if !JSONSerialization.isValidJSONObject(jsonArray) {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        
+        let tempJson = try? JSONSerialization.data(withJSONObject: jsonArray, options: [])
+        
+        guard let jsonData = tempJson else {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        
+        guard let urlComponents = URLComponents(string: NetworkApiService.webBaseUrl+"/api/portal/createbkashpayment") else {
+            print("Problem in UrlComponent creation...")
+            return nil
+        }
+        
+        guard let url = urlComponents.url else {
+            return nil
+        }
+        
+        //Request type
+        var request = getCommonUrlRequest(url: url)
+        request.httpMethod = "POST"
+        
+        //Setting headers
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        //Setting body for POST request
+        request.httpBody = jsonData
+        
+        return URLSession.shared.dataTaskPublisher(for: request)
+            .handleEvents(receiveSubscription: { _ in
+                self.showLoader.send(true)
+            }, receiveOutput: { _ in
+                self.showLoader.send(false)
+            }, receiveCompletion: { _ in
+                self.showLoader.send(false)
+            }, receiveCancel: {
+                self.showLoader.send(false)
+            })
+            .tryMap { data, response -> Data in
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    throw NetworkApiService.APIFailureCondition.InvalidServerResponse
+                }
+                
+                return data
+        }
+        .retry(1)
+        .decode(type: BKashCreatePaymentResponse.self, decoder: JSONDecoder())
+        .receive(on: RunLoop.main)
+        .eraseToAnyPublisher()
+    }
+    
+    func executeBkashPayment() {
+        self.executeBkashPaymentSubscriber = self.executeBkashPaymentApiCall()?
+            .sink(receiveCompletion: { completion in
+                switch completion {
+                    case .finished:
+                        break
+                    case .failure(let error):
+                        print(error.localizedDescription)
+                }
+            }, receiveValue: { response in
+                if !(response.resdata?.resExecuteBk?.isEmpty)! && response.resdata?.resExecuteBk != nil {
+                    self.saveBkashPayment(bkashPaymentResponse: (response.resdata?.resExecuteBk)!)
+                } else {
+                    self.errorToastPublisher.send((true, "Can not execute payment, please try again!"))
+                }
+            })
+    }
+    
+    func executeBkashPaymentApiCall() -> AnyPublisher<BKashExecutePaymentResponse, Error>? {
+        
+        let jsonObject = ["authToken": bkashToken,
+                          "paymentID": bkashPaymentExecuteJson["paymentID"] as? String] as [String : Any?]
+        let jsonArray = [jsonObject]
+        if !JSONSerialization.isValidJSONObject(jsonArray) {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        
+        let tempJson = try? JSONSerialization.data(withJSONObject: jsonArray, options: [])
+        
+        guard let jsonData = tempJson else {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        
+        guard let urlComponents = URLComponents(string: NetworkApiService.webBaseUrl+"/api/portal/executebkashpayment") else {
+            print("Problem in UrlComponent creation...")
+            return nil
+        }
+        
+        guard let url = urlComponents.url else {
+            return nil
+        }
+        
+        //Request type
+        var request = getCommonUrlRequest(url: url)
+        request.httpMethod = "POST"
+        
+        //Setting headers
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        //Setting body for POST request
+        request.httpBody = jsonData
+        
+        return URLSession.shared.dataTaskPublisher(for: request)
+            .handleEvents(receiveSubscription: { _ in
+                self.showLoader.send(true)
+            }, receiveOutput: { _ in
+                self.showLoader.send(false)
+            }, receiveCompletion: { _ in
+                self.showLoader.send(false)
+            }, receiveCancel: {
+                self.showLoader.send(false)
+            })
+            .tryMap { data, response -> Data in
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    throw NetworkApiService.APIFailureCondition.InvalidServerResponse
+                }
+                
+                return data
+        }
+        .retry(1)
+        .decode(type: BKashExecutePaymentResponse.self, decoder: JSONDecoder())
+        .receive(on: RunLoop.main)
+        .eraseToAnyPublisher()
+    }
+    
+    func saveBkashPayment(bkashPaymentResponse: String) {
+        self.finishBkashPaymentSubscriber = self.saveBkashPaymentApiCall(bkashPaymentModel: bkashPaymentResponse)?
+            .sink(receiveCompletion: { completion in
+                switch completion {
+                    case .finished:
+                        break
+                    case .failure(let error):
+                        print(error.localizedDescription)
+                }
+            }, receiveValue: { response in
+                self.bkashPaymentStatusPublisher.send((response.resdata.resstate!, response.resdata.message))
+            })
+    }
+    
+    func saveBkashPaymentApiCall(bkashPaymentModel: String) -> AnyPublisher<DefaultResponse, Error>? {
+        let bkashData = Data(bkashPaymentModel.utf8)
+        let bkashJson = try? JSONSerialization.jsonObject(with: bkashData, options: .allowFragments) as? [String: Any]
+
+        let user = UserLocalStorage.getUser()
+        let date = Date()
+        let format = DateFormatter()
+        format.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let today = format.string(from: date)
+        let jsonObject = ["CloudUserID": user.userID ?? 0,
+                          "UserTypeId": user.userType ?? 0,
+                          "TransactionNo": bkashJson?["trxID"] as Any,
+                          "InvoiceId": 0,
+                          "UserName": user.displayName as Any,
+                          "TransactionDate": today,
+                          "RechargeType": "bkash",
+                          "BalanceAmount": bkashJson?["amount"] as Any,
+                          "Particulars": "",
+                          "IsActive": true] as [String : Any]
+        
+        let jsonArray = [jsonObject, bkashJson]
+        if !JSONSerialization.isValidJSONObject(jsonArray) {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        
+        let tempJson = try? JSONSerialization.data(withJSONObject: jsonArray, options: [])
+        
+        guard let jsonData = tempJson else {
+            print("Problem in parameter creation...")
+            return nil
+        }
+        
+        guard let urlComponents = URLComponents(string: NetworkApiService.webBaseUrl+"/api/portal/newrechargebkashpayment") else {
+            print("Problem in UrlComponent creation...")
+            return nil
+        }
+        
+        guard let url = urlComponents.url else {
+            return nil
+        }
+        
+        //Request type
+        var request = getCommonUrlRequest(url: url)
+        request.httpMethod = "POST"
+        
+        //Setting headers
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        //Setting body for POST request
+        request.httpBody = jsonData
+        
+        return URLSession.shared.dataTaskPublisher(for: request)
+            .handleEvents(receiveSubscription: { _ in
+                self.showLoader.send(true)
+            }, receiveOutput: { _ in
+                self.showLoader.send(false)
+            }, receiveCompletion: { _ in
+                self.showLoader.send(false)
+            }, receiveCancel: {
+                self.showLoader.send(false)
+            })
+            .tryMap { data, response -> Data in
+                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                    throw NetworkApiService.APIFailureCondition.InvalidServerResponse
+                }
+                
+                return data
+        }
+        .retry(1)
+        .decode(type: DefaultResponse.self, decoder: JSONDecoder())
         .receive(on: RunLoop.main)
         .eraseToAnyPublisher()
     }

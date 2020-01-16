@@ -12,6 +12,22 @@ import Combine
 import UIKit
 import WebKit
 
+/// Implement this protocol to be notified about actions done by the WebView
+/// via postMessage or parameters sent by the page via a URL starting with AndroidNative://
+protocol BkashWebViewHandlerDelegate {
+    /// Called when a message with create payment action is received by the WebView
+    /// - Parameter message: the message received
+    func createPayment()
+    
+    /// Called when a message with execute payment action is received by the WebView
+    /// - Parameter message: the message received
+    func executePayment()
+    
+    /// Called when a message with finish payment action is received by the WebView
+    /// - Parameter message: the message received
+    func finishPayment()
+}
+
 struct PaymentView: View {
     
     @EnvironmentObject var userData: UserData
@@ -280,10 +296,12 @@ struct PaymentView: View {
                     .padding(.bottom, 20)
                     .onTapGesture {
                         self.viewModel.showLoader.send(true)
-                        self.viewModel.getBkashToken()
+                        if self.viewModel.bkashTokenModel == nil {
+                            self.viewModel.getBkashToken()
+                        } else {
+                            self.showBkashWebView = true
+                        }
                         self.showRechargeConfDialog = false
-                        self.viewModel.rechargeAmount = ""
-                        self.note = ""
                 }
             }
             .frame(minWidth: 0, maxWidth: .infinity)
@@ -379,15 +397,38 @@ struct PaymentView: View {
         }
     }
     
-    struct BKashWebView: UIViewRepresentable {
+    struct BKashWebView: UIViewRepresentable, BkashWebViewHandlerDelegate {
         var viewModel: PaymentViewModel
+        
+        func createPayment() {
+            viewModel.createBkashPayment()
+        }
+        
+        func executePayment() {
+            viewModel.executeBkashPayment()
+        }
+        
+        func finishPayment() {
+            viewModel.refreshUI()
+            viewModel.showBkashWebViewPublisher.send(false)
+            viewModel.showLoader.send(false)
+            viewModel.bkashTokenModel = nil
+            viewModel.rechargeAmount = ""
+        }
         
         func makeCoordinator() -> Coordinator {
             Coordinator(self)
         }
         
         func makeUIView(context: Context) -> WKWebView {
-            let webView = WKWebView()
+            let preferences = WKPreferences()
+            preferences.javaScriptEnabled = true
+            
+            let configuration = WKWebViewConfiguration()
+            configuration.userContentController.add(self.makeCoordinator(), name: "iOSNative")
+            configuration.preferences = preferences
+            
+            let webView = WKWebView(frame: CGRect.zero, configuration: configuration)
             webView.navigationDelegate = context.coordinator
             webView.allowsBackForwardNavigationGestures = true
             webView.scrollView.isScrollEnabled = true
@@ -395,20 +436,103 @@ struct PaymentView: View {
         }
         
         func updateUIView(_ webView: WKWebView, context: Context) {
-            if let bkashUrl = Bundle.main.url(forResource: "checkout_120", withExtension: "html") {
-                webView.load(URLRequest(url: bkashUrl))
+            if let bkashUrl = Bundle.main.url(forResource: "checkout_120", withExtension: "html", subdirectory: "www") {
+//                webView.load(URLRequest(url: bkashUrl))
+                webView.loadFileURL(bkashUrl, allowingReadAccessTo: bkashUrl.deletingLastPathComponent())
             }
         }
         
         class Coordinator : NSObject, WKNavigationDelegate {
             
             var parent: BKashWebView
+            var delegate: BkashWebViewHandlerDelegate?
             
             init(_ uiWebView: BKashWebView) {
                 self.parent = uiWebView
+                self.delegate = parent
             }
             
             func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+                
+//                if response.resdata.resstate! {
+//                    self.successToastPublisher.send((true, response.resdata.message ?? "Payment not successful, Please try again"))
+//                } else {
+//                    self.errorToastPublisher.send((true, response.resdata.message ?? "Payment not successful, Please try again"))
+//                }
+                
+                parent.viewModel.bkashPaymentStatusPublisher.receive(on: RunLoop.main).sink(receiveValue: { (isSuccessful, message) in
+                    if isSuccessful {
+                        self.parent.viewModel.successToastPublisher.send((true, message ?? "Payment not successful, Please try again"))
+                        let javascriptFunction = "finishBkashPayment();"
+                        webView.evaluateJavaScript(javascriptFunction) { (response, error) in
+                            if let _ = error {
+                                print("Error calling javascript:callReconfigure()")
+                            }
+                            else {
+                                print("Called javascript:callReconfigure()")
+                            }
+                        }
+                    } else {
+                        self.parent.viewModel.errorToastPublisher.send((true, message ?? "Payment not successful, Please try again"))
+                        self.parent.viewModel.showBkashWebViewPublisher.send(false)
+                        self.parent.viewModel.showLoader.send(false)
+                    }
+                })
+                
+                parent.viewModel.bkashCreatePaymentPublisher.receive(on: RunLoop.main).sink(receiveValue: { resBkash in
+                    guard let data = resBkash.data(using: .utf8) else {
+                        print("Problem in response data parsing...")
+                        return
+                    }
+                    
+                    var jsonObject = try? JSONSerialization.jsonObject(with: data, options: .allowFragments) as? [String: Any]
+                    jsonObject?["errorCode"] = nil
+                    jsonObject?["errorMessage"] = nil
+                    
+                    self.parent.viewModel.bkashPaymentExecuteJson = jsonObject!
+                    
+                    guard let newJsonData = try? JSONSerialization.data(withJSONObject: jsonObject as Any, options: .fragmentsAllowed) else { return }
+
+                    
+                    let jsonString = String(data: newJsonData, encoding: .utf8)!
+                    
+                    let javascriptFunction = "createBkashPayment(\(jsonString));"
+                    webView.evaluateJavaScript(javascriptFunction) { (response, error) in
+                        if let _ = error {
+                            print("Error calling javascript:callReconfigure()")
+                        }
+                        else {
+                            print("Called javascript:callReconfigure()")
+                        }
+                    }
+                    
+                })
+                
+                let request = PaymentRequest(amount: parent.viewModel.rechargeAmount)
+                let jsonData = try! JSONEncoder().encode(request)
+                let jsonString = String(data: jsonData, encoding: .utf8) ?? "ERROR"
+                print(jsonString)
+                
+                let parameter = "{paymentRequest:\(jsonString)}"
+                let javascriptFunction1 = "callReconfigure(\(parameter));"
+                let javascriptFunction2 = "clickPayButton();"
+                webView.evaluateJavaScript(javascriptFunction1) { (response, error) in
+                    if let _ = error {
+                        print("Error calling javascript:callReconfigure()")
+                    }
+                    else {
+                        print("Called javascript:callReconfigure()")
+                    }
+                }
+                
+                webView.evaluateJavaScript(javascriptFunction2) { (response, error) in
+                    if let _ = error {
+                        print("Error calling javascript:clickPayButton()")
+                    }
+                    else {
+                        print("Called javascript:clickPayButton()")
+                    }
+                }
                 parent.viewModel.showLoader.send(false)
             }
             
@@ -429,6 +553,7 @@ struct PaymentView: View {
                         webView.goForward()
                     } else if navigation == "Back" && !webView.canGoBack {
                         self.parent.viewModel.showBkashWebViewPublisher.send(false)
+                        self.parent.viewModel.showLoader.send(false)
                     }
                 })
             }
@@ -624,6 +749,7 @@ struct PaymentView: View {
             }
             .onReceive(self.viewModel.showBkashWebViewPublisher.receive(on: RunLoop.main)) { shouldShow in
                 self.showBkashWebView = shouldShow
+                self.showLoader = true
             }
             .onReceive(self.viewModel.showLoader.receive(on: RunLoop.main)) { shouldShow in
                 self.showLoader = shouldShow
@@ -639,6 +765,28 @@ struct PaymentView: View {
         }
         .onAppear {
             self.viewModel.refreshUI()
+        }
+    }
+}
+
+extension PaymentView.BKashWebView.Coordinator: WKScriptMessageHandler {
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "iOSNative" {
+            if let body = message.body as? [String: String] {
+                guard let action = body["action"] else { return }
+                if action == "CREATE" {
+                    delegate?.createPayment()
+                } else if action == "EXECUTE" {
+                    delegate?.executePayment()
+                } else if action == "FINISH" {
+                    delegate?.finishPayment()
+                }
+            }
+//            else if let body = message.body as? String {
+//                if let parameters = ParametersHandler.decodeParameters(inString: body) {
+//                    delegate?.didReceiveParameters(parameters: parameters)
+//                }
+//            }
         }
     }
 }
