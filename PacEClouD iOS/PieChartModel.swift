@@ -11,7 +11,7 @@ import SwiftUI
 import Combine
 
 /// The data model for a single chart ring.
-class Ring: ObservableObject {
+class metal: ObservableObject {
     /// Full circle angle in radian e.g. 360 degree = 6.28319 radian
     let fullCircleLengthInRadius = 6.28319
     var totalWedgesWidth = 0.0
